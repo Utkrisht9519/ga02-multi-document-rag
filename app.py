@@ -1,57 +1,125 @@
+import os
+from pathlib import Path
 import streamlit as st
+
 from backend.ingestion import load_documents
 from backend.chunking import chunk_documents
 from backend.vector_store import create_vector_store
-from backend.web_search import web_search
-from backend.router import route_query
 from backend.rag import generate_answer
+from backend.web_search import web_search
 
-st.set_page_config(page_title="AI RAG Chatbot", layout="wide")
+# -------------------------
+# Page config
+# -------------------------
+st.set_page_config(
+    page_title="Multi-Document RAG Chatbot",
+    page_icon="📄",
+    layout="wide"
+)
 
+# -------------------------
+# Constants
+# -------------------------
+UPLOAD_DIR = "documents"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# -------------------------
 # Sidebar
+# -------------------------
 with st.sidebar:
     st.title("📘 About")
-    st.write("""
-    This AI RAG Chatbot can:
-    - Answer questions from your documents
-    - Search the web using Tavily
-    - Combine both sources intelligently
-    """)
-    web_toggle = st.toggle("🌐 Enable Web Search")
+
+    st.markdown(
+        """
+        **Multi-Document RAG Chatbot** can:
+
+        • Answer questions from uploaded documents  
+        • Search the web using Tavily  
+        • Combine document + web context intelligently  
+        """
+    )
+
+    enable_web = st.toggle("🌐 Enable Web Search", value=False)
 
     st.divider()
-    uploaded_files = st.file_uploader("📄 Upload Documents", accept_multiple_files=True)
 
+    st.subheader("📄 Upload Documents")
+    uploaded_files = st.file_uploader(
+        "Drag and drop files here",
+        type=["pdf", "txt"],
+        accept_multiple_files=True
+    )
+
+# -------------------------
+# Save uploaded files
+# -------------------------
+if uploaded_files:
+    for file in uploaded_files:
+        file_path = Path(UPLOAD_DIR) / file.name
+        with open(file_path, "wb") as f:
+            f.write(file.read())
+
+    st.sidebar.success("Documents uploaded successfully")
+
+# -------------------------
 # Main UI
-st.title("AI RAG Chatbot")
+# -------------------------
+st.title("Multi-Document RAG Chatbot")
+st.caption("Ask questions about your documents (and optionally the web)")
 
-if "chat" not in st.session_state:
-    st.session_state.chat = []
+st.divider()
 
-question = st.text_input("Ask a question about your documents")
+# -------------------------
+# Question input (BOTTOM)
+# -------------------------
+question = st.text_input(
+    "Ask a question about your documents",
+    placeholder="e.g. What is the main idea of this document?"
+)
 
-if st.button("Ask"):
-    docs = load_documents()
-    chunks = chunk_documents(docs)
-    vectorstore = create_vector_store(chunks)
+ask_clicked = st.button("Ask")
 
-    route = route_query(question, web_toggle)
+# -------------------------
+# RAG Pipeline
+# -------------------------
+if ask_clicked:
+    if not question.strip():
+        st.warning("Please enter a question.")
+        st.stop()
 
-    context = ""
-    if route in ["doc", "hybrid"]:
-        docs = vectorstore.similarity_search(question, k=4)
-        context += "\n".join(d.page_content for d in docs)
+    with st.spinner("Processing documents..."):
+        docs = load_documents(UPLOAD_DIR)
 
-    if route in ["web", "hybrid"]:
-        results = web_search(question)
-        context += "\n".join(r["content"] for r in results["results"])
+        if not docs:
+            st.warning("Please upload at least one document before asking a question.")
+            st.stop()
 
-    answer = generate_answer(context, question)
-    st.session_state.chat.append((question, answer))
+        chunks = chunk_documents(docs)
+        vectorstore = create_vector_store(chunks)
 
-# Chat history
-for q, a in st.session_state.chat:
-    st.markdown(f"**You:** {q}")
-    st.markdown(f"**AI:** {a}")
-    if st.toggle("✏️ Edit question"):
-        st.text_input("Edit your question", value=q)
+    # -------------------------
+    # Web Search (optional)
+    # -------------------------
+    web_context = ""
+    if enable_web:
+        with st.spinner("Searching the web..."):
+            web_context = web_search(question)
+
+    # -------------------------
+    # Generate Answer
+    # -------------------------
+    with st.spinner("Generating answer..."):
+        answer = generate_answer(
+            question=question,
+            vectorstore=vectorstore,
+            web_context=web_context
+        )
+
+    st.subheader("Answer")
+    st.write(answer)
+
+# -------------------------
+# Footer
+# -------------------------
+st.divider()
+st.caption("Built with Streamlit • LangChain • FAISS • Groq • Tavily")
