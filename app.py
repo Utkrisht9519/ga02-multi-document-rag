@@ -6,13 +6,13 @@ from backend.web_search import web_search
 from backend.router import route_query
 from backend.rag import generate_answer
 
-st.set_page_config(page_title="AI Advocate RAG Chatbot", layout="wide")
+st.set_page_config(page_title="AI RAG Chatbot", layout="wide")
 
 # Sidebar
 with st.sidebar:
     st.title("📘 About")
     st.write("""
-    This AI Advocate RAG Chatbot can:
+    This AI RAG Chatbot can:
     - Answer questions from your documents
     - Search the web using Tavily
     - Combine both sources intelligently
@@ -23,7 +23,7 @@ with st.sidebar:
     uploaded_files = st.file_uploader("📄 Upload Documents", accept_multiple_files=True)
 
 # Main UI
-st.title("AI Advocate RAG Chatbot")
+st.title("AI RAG Chatbot")
 
 if "chat" not in st.session_state:
     st.session_state.chat = []
