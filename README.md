@@ -30,32 +30,55 @@ This application allows users to upload multiple documents, ask questions, and r
 🧩 Architecture Overview
 
 User Query
+
    ↓
+
 Vector Search (FAISS)
+
    ↓
+
 [ Optional Web Search (Tavily) ]
+
    ↓
+
 Context Fusion
+
    ↓
+
 LLM (Groq – LLaMA 3.1)
+
    ↓
+
 Answer + Sources
 
 📂 Project Structure
 
 ga02-multi-document-rag/
+
 │
+
 ├── app.py                     # Streamlit UI & app logic
+
 ├── requirements.txt           # Python dependencies
+
 ├── runtime.txt                # Python runtime version
+
 ├── README.md                  # Project documentation
+
 │
+
 ├── backend/
+
 │   ├── ingestion.py           # File loading & preprocessing
+
 │   ├── vector_store.py        # FAISS vector store creation
+
 │   ├── rag.py                 # RAG pipeline & LLM logic
+
 │   └── web_search.py          # Tavily web search
+
 │
+
 └── .streamlit/
     └── secrets.toml           # API keys (NOT committed)
 
@@ -77,11 +100,7 @@ Orchestration	LangChain
 
 📦 Installation (Local Setup)
 
-1️⃣ Clone Repository
-
-git clone https://github.com/Utkrisht9519/ga02-multi-document-rag.git
-
-cd ga02-multi-document-rag
+1️⃣ Clone Repository: git clone https://github.com/Utkrisht9519/ga02-multi-document-rag.git
 
 2️⃣ Create Virtual Environment
 
@@ -95,10 +114,7 @@ pip install -r requirements.txt
 
 4️⃣ Configure API Keys
 
-Create file:
-
-.streamlit/secrets.toml
-
+Create file: .streamlit/secrets.toml
 
 Add:
 
@@ -114,9 +130,7 @@ TAVILY_API_KEY = "your_tavily_api_key"
 streamlit run app.py
 
 
-Open browser at:
-
-http://localhost:8501
+Open browser at: http://localhost:8501
 
 ☁️ Deployment (Streamlit Cloud)
 
