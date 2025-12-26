@@ -1,73 +1,86 @@
-import os
 from groq import Groq
+import streamlit as st
 
 # Groq Client Setup
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-
-# Answer Generation (Hybrid RAG)
+# Generate Answer Function
 def generate_answer(
     question: str,
     vectorstore,
+    use_web: bool = False,
     web_context: str | None = None,
     top_k: int = 4,
-) -> str:
+):
     """
-    Generate an answer using:
-    - FAISS vector search (documents)
-    - Optional Tavily web search context
+    Generates an answer using document RAG and optional web context.
+    Returns answer + sources for citations.
     """
 
     # Retrieve document chunks
     docs = vectorstore.similarity_search(question, k=top_k)
 
-    if not docs:
-        doc_context = "No relevant document content found."
-    else:
-        doc_context = "\n\n".join(
-            [f"[Document]\n{doc.page_content}" for doc in docs]
+    sources = []
+    context_blocks = []
+
+    for i, doc in enumerate(docs, start=1):
+        source = doc.metadata.get("source", "Uploaded document")
+        page = doc.metadata.get("page", "N/A")
+
+        sources.append(
+            {
+                "id": i,
+                "source": source,
+                "page": page,
+                "content": doc.page_content,
+            }
         )
 
-    # Combine with web context
-    if web_context:
-        context = f"""
+        context_blocks.append(f"[{i}] {doc.page_content}")
+
+    document_context = "\n\n".join(context_blocks)
+
+    # Combine with web context (Hybrid Search)
+    if use_web and web_context:
+        final_context = f"""
 DOCUMENT CONTEXT:
-{doc_context}
+{document_context}
 
 WEB CONTEXT:
 {web_context}
 """
     else:
-        context = f"""
+        final_context = f"""
 DOCUMENT CONTEXT:
-{doc_context}
+{document_context}
 """
 
-    # Prompt
+    # Prompt (forces citations)
     prompt = f"""
-You are a professional research assistant.
+You are a factual research assistant.
 
 Rules:
-- Use ONLY the provided context
-- Summarize in your own words
-- Be accurate and concise
-- Do NOT copy verbatim text
+- Answer ONLY from the given context
+- Cite sources using [1], [2], etc.
 - Do NOT hallucinate
+- If the answer is not found, say "Not found in provided documents."
 
 Context:
-{context}
+{final_context}
 
 Question:
 {question}
 
-Answer:
+Answer (with citations):
 """
 
-    # Call Groq LLM
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
     )
 
-    return response.choices[0].message.content
+    return {
+        "answer": response.choices[0].message.content,
+        "sources": sources,
+    }
