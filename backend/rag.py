@@ -1,86 +1,40 @@
-from groq import Groq
 import streamlit as st
+from groq import Groq
 
-# Groq Client Setup
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-# Generate Answer Function
-def generate_answer(
-    question: str,
-    vectorstore,
-    web_context: str | None = None,
-    hybrid: bool = False,
-    top_k: int = 4,
-):
-    """
-    Generates an answer using document RAG and optional web context.
-    Returns answer + sources for citations.
-    """
+def generate_answer(question, vectorstore, web_context="", hybrid=False):
+    docs = vectorstore.similarity_search(question, k=4)
 
-    # Retrieve document chunks
-    docs = vectorstore.similarity_search(question, k=top_k)
+    doc_context = "\n\n".join(d.page_content for d in docs)
 
-    sources = []
-    context_blocks = []
-
-    for i, doc in enumerate(docs, start=1):
-        source = doc.metadata.get("source", "Uploaded document")
-        page = doc.metadata.get("page", "N/A")
-
-        sources.append(
-            {
-                "id": i,
-                "source": source,
-                "page": page,
-                "content": doc.page_content,
-            }
-        )
-
-        context_blocks.append(f"[{i}] {doc.page_content}")
-
-    document_context = "\n\n".join(context_blocks)
-
-    # Combine with web context (Hybrid Search)
+    combined_context = doc_context
     if hybrid and web_context:
-        final_context = f"""
-    DOCUMENT CONTEXT:
-    {document_context}
+        combined_context += f"\n\nWeb Context:\n{web_context}"
 
-    WEB CONTEXT:
-    {web_context}
-    """
-    else:
-        final_context = f"""
-    DOCUMENT CONTEXT:
-    {document_context}
-    """
-
-    # Prompt (forces citations)
     prompt = f"""
-You are a factual research assistant.
-
-Rules:
-- Answer ONLY from the given context
-- Cite sources using [1], [2], etc.
-- Do NOT hallucinate
-- If the answer is not found, say "Not found in provided documents."
+Answer the question using the context below.
+Always cite sources at the end.
 
 Context:
-{final_context}
+{combined_context}
 
 Question:
 {question}
-
-Answer (with citations):
 """
 
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
+        messages=[{"role": "user", "content": prompt}]
     )
 
-    return {
-        "answer": response.choices[0].message.content,
-        "sources": sources,
-    }
+    answer = response.choices[0].message.content
+
+    sources = list(
+        set(
+            d.metadata.get("source", "Uploaded document")
+            for d in docs
+        )
+    )
+
+    return answer, sources

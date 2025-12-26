@@ -1,17 +1,29 @@
-from pathlib import Path
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from langchain.schema import Document
+import tempfile
+import os
 
+def load_uploaded_documents(uploaded_files):
+    documents = []
 
-def load_documents(folder="documents"):
-    docs = []
+    for file in uploaded_files:
+        suffix = file.name.split(".")[-1]
 
-    for file in Path(folder).iterdir():
-        if file.suffix.lower() == ".pdf":
-            loader = PyPDFLoader(str(file))
-            docs.extend(loader.load())
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{suffix}") as tmp:
+            tmp.write(file.read())
+            tmp_path = tmp.name
 
-        elif file.suffix.lower() == ".txt":
-            loader = TextLoader(str(file))
-            docs.extend(loader.load())
+        if suffix == "pdf":
+            loader = PyPDFLoader(tmp_path)
+            docs = loader.load()
+        else:
+            loader = TextLoader(tmp_path)
+            docs = loader.load()
 
-    return docs
+        for d in docs:
+            d.metadata["source"] = file.name
+
+        documents.extend(docs)
+        os.remove(tmp_path)
+
+    return documents
