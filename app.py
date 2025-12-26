@@ -1,112 +1,138 @@
+import os
 import streamlit as st
-from pathlib import Path
-import tempfile
-
 from backend.ingestion import load_documents
 from backend.chunking import chunk_documents
 from backend.vector_store import create_vector_store
-from backend.web_search import tavily_search
 from backend.rag import generate_answer
+from backend.web_search import tavily_search
 
-
+# -------------------------
 # Page Config
+# -------------------------
 st.set_page_config(
     page_title="Multi-Document RAG Chatbot",
-    layout="wide",
+    page_icon="📄",
+    layout="wide"
 )
 
-
+# -------------------------
 # Sidebar
-st.sidebar.title("📘 About")
+# -------------------------
+with st.sidebar:
+    st.title("📘 About")
 
-st.sidebar.markdown(
-    """
-**Multi-Document RAG Chatbot can:**
-- Answer questions from uploaded documents
-- Search the web using Tavily
-- Combine document + web context intelligently
-"""
-)
+    st.markdown("""
+    **Multi-Document RAG Chatbot** can:
 
-enable_web = st.sidebar.toggle("🌐 Enable Web Search", value=False)
-enable_hybrid = st.sidebar.toggle(
-    "🔀 Enable Hybrid Search (Docs + Web)",
-    value=False,
-    disabled=not enable_web,
-)
+    • Answer questions from uploaded documents  
+    • Search the web using Tavily  
+    • Combine document + web context intelligently  
+    """)
 
-st.sidebar.divider()
+    enable_web = st.toggle("🌐 Enable Web Search", value=False)
+    enable_hybrid = st.toggle("🔀 Enable Hybrid Search", value=False)
 
-uploaded_files = st.sidebar.file_uploader(
-    "📄 Upload Documents (PDF / TXT)",
-    type=["pdf", "txt"],
-    accept_multiple_files=True,
-)
+    st.divider()
 
+    st.subheader("📂 Upload Documents")
 
+    uploaded_files = st.file_uploader(
+        "Upload PDF or TXT files",
+        type=["pdf", "txt"],
+        accept_multiple_files=True
+    )
+
+# -------------------------
+# Ensure documents folder
+# -------------------------
+DOC_DIR = "documents"
+os.makedirs(DOC_DIR, exist_ok=True)
+
+# -------------------------
+# Save Uploaded Files
+# -------------------------
+if uploaded_files:
+    for file in uploaded_files:
+        file_path = os.path.join(DOC_DIR, file.name)
+        with open(file_path, "wb") as f:
+            f.write(file.read())
+
+    st.success(f"Uploaded {len(uploaded_files)} document(s)")
+
+# -------------------------
 # Main UI
-st.title("📚 Multi-Document RAG Chatbot")
+# -------------------------
+st.title("Multi-Document RAG Chatbot")
 
-question = st.text_input("Ask a question about your documents")
+# Sample Questions
+st.subheader("💡 Sample Questions")
 
+sample_questions = [
+    "Summarize the uploaded documents",
+    "What is the main topic discussed?",
+    "Explain this document in simple terms",
+    "List key points from the document",
+]
 
+cols = st.columns(len(sample_questions))
+for i, q in enumerate(sample_questions):
+    if cols[i].button(q):
+        st.session_state["question"] = q
+
+# -------------------------
+# Question Input
+# -------------------------
+question = st.text_input(
+    "Ask a question about your documents",
+    value=st.session_state.get("question", "")
+)
+
+# -------------------------
 # Ask Button
+# -------------------------
 if st.button("Ask"):
-
-    if not uploaded_files:
-        st.warning("Please upload at least one document.")
-        st.stop()
 
     if not question.strip():
         st.warning("Please enter a question.")
         st.stop()
 
-    # Save uploaded files temporarily
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp_path = Path(tmpdir)
+    docs = load_documents(DOC_DIR)
 
-        for file in uploaded_files:
-            file_path = tmp_path / file.name
-            with open(file_path, "wb") as f:
-                f.write(file.read())
+    if not docs:
+        st.error("No documents found. Please upload files first.")
+        st.stop()
 
-        # Load & process documents
-        with st.spinner("Processing documents..."):
-            documents = load_documents(tmp_path)
-            chunks = chunk_documents(documents)
-            vectorstore = create_vector_store(chunks)
+    chunks = chunk_documents(docs)
+    vectorstore = create_vector_store(chunks)
 
-        # Optional web search
-        web_context = None
-        if enable_web:
-            with st.spinner("Searching the web..."):
-                web_context = tavily_search(question)
+    web_context = ""
+    if enable_web:
+        web_context = tavily_search(question)
 
-        # Generate answer
-        with st.spinner("Generating answer..."):
-            result = generate_answer(
-                question=question,
-                vectorstore=vectorstore,
-                use_web=enable_hybrid,
-                web_context=web_context,
-            )
+    with st.spinner("Generating answer..."):
+        answer, sources = generate_answer(
+            question=question,
+            vectorstore=vectorstore,
+            web_context=web_context,
+            hybrid=enable_hybrid
+        )
 
-        # Display Answer
-        st.subheader("Answer")
-        st.write(result["answer"])
+    # -------------------------
+    # Answer Display
+    # -------------------------
+    st.subheader("✅ Answer")
+    st.write(answer)
 
-        # Evidence & Sources
-        st.subheader("Evidence & Sources")
+    # -------------------------
+    # Citations
+    # -------------------------
+    if sources:
+        st.subheader("📚 Sources")
+        for src in sources:
+            st.markdown(f"- {src}")
 
-        for src in result["sources"]:
-            with st.expander(
-                f"Source [{src['id']}] — {src['source']} (page {src['page']})"
-            ):
-                st.write(src["content"])
-
-
+# -------------------------
 # Footer
+# -------------------------
 st.divider()
-st.caption(
-    "Built with Streamlit • LangChain • FAISS • Groq • Tavily"
-)
+st.caption("Built with Streamlit • LangChain • FAISS • Groq • Tavily")
