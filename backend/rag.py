@@ -8,8 +8,8 @@ client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 def generate_answer(
     question: str,
     vectorstore,
-    use_web: bool = False,
     web_context: str | None = None,
+    hybrid: bool = False,
     top_k: int = 4,
 ):
     """
@@ -41,19 +41,19 @@ def generate_answer(
     document_context = "\n\n".join(context_blocks)
 
     # Combine with web context (Hybrid Search)
-    if use_web and web_context:
+    if hybrid and web_context:
         final_context = f"""
-DOCUMENT CONTEXT:
-{document_context}
+    DOCUMENT CONTEXT:
+    {document_context}
 
-WEB CONTEXT:
-{web_context}
-"""
+    WEB CONTEXT:
+    {web_context}
+    """
     else:
         final_context = f"""
-DOCUMENT CONTEXT:
-{document_context}
-"""
+    DOCUMENT CONTEXT:
+    {document_context}
+    """
 
     # Prompt (forces citations)
     prompt = f"""
