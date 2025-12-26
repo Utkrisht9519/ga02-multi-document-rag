@@ -1,14 +1,8 @@
-from langchain_groq import ChatGroq
-from langchain.prompts import PromptTemplate
-from langchain.schema import Document
 import os
+from groq import Groq
 
-# LLM Setup (Groq – Free Tier)
-llm = ChatGroq(
-    groq_api_key=os.getenv("GROQ_API_KEY"),
-    model_name="llama-3.1-8b-instant",
-    temperature=0.2,
-)
+# Groq Client Setup
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
 # Answer Generation (Hybrid RAG)
@@ -22,15 +16,6 @@ def generate_answer(
     Generate an answer using:
     - FAISS vector search (documents)
     - Optional Tavily web search context
-
-    Args:
-        question (str): User question
-        vectorstore: FAISS vector store
-        web_context (str): Web search results (optional)
-        top_k (int): Number of document chunks to retrieve
-
-    Returns:
-        str: Final answer
     """
 
     # Retrieve document chunks
@@ -45,7 +30,7 @@ def generate_answer(
 
     # Combine with web context
     if web_context:
-        combined_context = f"""
+        context = f"""
 DOCUMENT CONTEXT:
 {doc_context}
 
@@ -53,24 +38,21 @@ WEB CONTEXT:
 {web_context}
 """
     else:
-        combined_context = f"""
+        context = f"""
 DOCUMENT CONTEXT:
 {doc_context}
 """
 
-    # Prompt Template
-    prompt = PromptTemplate(
-        input_variables=["context", "question"],
-        template="""
+    # Prompt
+    prompt = f"""
 You are a professional research assistant.
 
-Your task:
-- Read the context carefully
-- Summarize information in your own words
-- Provide a clear, concise, accurate answer
-- Do NOT copy text verbatim
+Rules:
+- Use ONLY the provided context
+- Summarize in your own words
+- Be accurate and concise
+- Do NOT copy verbatim text
 - Do NOT hallucinate
-- If information is missing, clearly say so
 
 Context:
 {context}
@@ -79,12 +61,13 @@ Question:
 {question}
 
 Answer:
-""",
+"""
+
+    # Call Groq LLM
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
     )
 
-    # Generate Answer
-    response = llm.invoke(
-        prompt.format(context=combined_context, question=question)
-    )
-
-    return response.content
+    return response.choices[0].message.content
