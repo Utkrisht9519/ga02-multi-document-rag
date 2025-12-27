@@ -1,31 +1,31 @@
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
-from pathlib import Path
 import tempfile
-import os
+from pathlib import Path
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
+
 
 def ingest_uploaded_files(uploaded_files):
-    """
-    Takes Streamlit uploaded files and converts them into LangChain Documents
-    """
     documents = []
 
-    for uploaded_file in uploaded_files:
-        suffix = Path(uploaded_file.name).suffix.lower()
+    for file in uploaded_files:
+        suffix = Path(file.name).suffix.lower()
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(uploaded_file.read())
+            tmp.write(file.getvalue())
             tmp_path = tmp.name
 
-        try:
-            if suffix == ".pdf":
-                loader = PyPDFLoader(tmp_path)
-                documents.extend(loader.load())
+        if suffix == ".pdf":
+            loader = PyPDFLoader(tmp_path)
+        elif suffix == ".txt":
+            loader = TextLoader(tmp_path)
+        else:
+            continue
 
-            elif suffix == ".txt":
-                loader = TextLoader(tmp_path, encoding="utf-8")
-                documents.extend(loader.load())
+        loaded_docs = loader.load()
 
-        finally:
-            os.remove(tmp_path)
+        for doc in loaded_docs:
+            doc.metadata["file_name"] = file.name
+            doc.metadata["source"] = f"{file.name} (page {doc.metadata.get('page', 'N/A')})"
+
+        documents.extend(loaded_docs)
 
     return documents
