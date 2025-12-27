@@ -1,17 +1,23 @@
 import streamlit as st
-
 from backend.ingestion import ingest_uploaded_files
+from backend.chunking import chunk_documents
 from backend.vector_store import create_vector_store
-from backend.rag import generate_answer
 from backend.web_search import tavily_search
+from backend.rag import generate_answer
 
+# -------------------------
+# Page Config
+# -------------------------
+st.set_page_config(
+    page_title="Multi-Document RAG Chatbot",
+    layout="wide"
+)
 
-st.set_page_config(page_title="Multi-Document RAG Chatbot", layout="wide")
-
+# -------------------------
 # Sidebar
+# -------------------------
 with st.sidebar:
-    st.title("📘 About")
-
+    st.markdown("## 📘 About")
     st.markdown("""
     **Multi-Document RAG Chatbot can:**
     - Answer questions from uploaded documents
@@ -19,71 +25,82 @@ with st.sidebar:
     - Combine document + web context intelligently
     """)
 
-    use_web = st.toggle("🌐 Enable Web Search", value=False)
-    use_hybrid = st.toggle("🔀 Enable Hybrid Search", value=False)
+    enable_web = st.toggle("🌐 Enable Web Search", value=False)
+    enable_hybrid = st.toggle("🔀 Enable Hybrid Search", value=False)
 
     st.divider()
 
-    st.subheader("📂 Upload Documents")
+    st.markdown("### 📁 Upload Documents")
     uploaded_files = st.file_uploader(
         "Upload PDF or TXT files",
         type=["pdf", "txt"],
         accept_multiple_files=True
     )
 
+# -------------------------
 # Main UI
+# -------------------------
 st.title("Multi-Document RAG Chatbot")
+
+st.markdown("### 💡 Sample Questions")
+samples = [
+    "Summarize the uploaded documents",
+    "What is the main topic discussed?",
+    "Explain this document in simple terms",
+    "List key points from the document"
+]
+
+cols = st.columns(len(samples))
+for i, q in enumerate(samples):
+    if cols[i].button(q):
+        st.session_state["question"] = q
 
 question = st.text_input(
     "Ask a question about your documents",
-    placeholder="e.g. Summarize the key findings of the uploaded papers"
+    value=st.session_state.get("question", "")
 )
 
-if st.button("Ask") and question:
-    if uploaded_files:
-        docs, uploaded_filenames = ingest_uploaded_files(uploaded_files)
-        vectorstore = create_vector_store(docs)
+ask_clicked = st.button("Ask")
+
+# -------------------------
+# RAG Flow
+# -------------------------
+if ask_clicked:
+    if not uploaded_files:
+        st.warning("Please upload at least one document.")
+    elif not question.strip():
+        st.warning("Please enter a question.")
     else:
-        vectorstore = None
-        uploaded_filenames = []
+        with st.spinner("Processing documents..."):
+            docs = ingest_uploaded_files(uploaded_files)
+            chunks = chunk_documents(docs)
+            vectorstore = create_vector_store(chunks)
 
-    web_context = None
-    if use_web or use_hybrid:
-        web_context = tavily_search(question)
+        web_context = None
+        if enable_web or enable_hybrid:
+            web_context = tavily_search(question)
 
-    with st.spinner("Generating answer..."):
-        answer, sources = generate_answer(
-            question=question,
-            vectorstore=vectorstore,
-            web_context=web_context,
-            use_web=use_web,
-            use_hybrid=use_hybrid
-        )
+        with st.spinner("Generating answer..."):
+            answer, sources = generate_answer(
+                question=question,
+                vectorstore=vectorstore,
+                web_context=web_context,
+                hybrid=enable_hybrid
+            )
 
-    st.markdown("## ✅ Answer")
-    st.write(answer)
+        # -------------------------
+        # Answer Section (ONLY place sources appear)
+        # -------------------------
+        st.markdown("## ✅ Answer")
+        st.write(answer)
 
-    # Sources Rendering Logic
-    st.markdown("### 📚 Sources")
-
-    if use_web and not use_hybrid:
-        # Web-only
-        for src in sources["web_sources"]:
-            st.markdown(f"- {src}")
-
-    elif use_hybrid:
-        # Hybrid
-        if sources["web_sources"]:
-            st.markdown("**Web Sources:**")
-            for src in sources["web_sources"]:
+        if sources:
+            st.markdown("**Sources:**")
+            for src in sources:
                 st.markdown(f"- {src}")
 
-        if sources["document_sources"]:
-            st.markdown("**Uploaded Documents:**")
-            for doc in sources["document_sources"]:
-                st.markdown(f"- {doc}")
-
-    else:
-        # Document-only
-        for doc in sources["document_sources"]:
-            st.markdown(f"- {doc}")
+# -------------------------
+# Footer
+# -------------------------
+st.divider()
+st.caption("Built with Streamlit · LangChain · FAISS · Groq · Tavily")
