@@ -1,92 +1,106 @@
 import streamlit as st
-
 from backend.ingestion import ingest_uploaded_files
+from backend.chunking import chunk_documents
 from backend.vector_store import create_vector_store
 from backend.web_search import tavily_search
 from backend.rag import generate_answer
 
-st.set_page_config(page_title="Multi-Document RAG Chatbot", layout="wide")
-
-# ---------------- Sidebar ----------------
-st.sidebar.title("About")
-
-st.sidebar.markdown("""
-Multi-Document RAG Chatbot can:
-- Answer questions from uploaded documents
-- Search the web using Tavily
-- Combine document + web context intelligently
-""")
-
-web_enabled = st.sidebar.toggle("Enable Web Search", value=False)
-hybrid_enabled = st.sidebar.toggle("Enable Hybrid Search", value=False)
-
-st.sidebar.markdown("---")
-
-uploaded_files = st.sidebar.file_uploader(
-    "Upload PDF or TXT files",
-    type=["pdf", "txt"],
-    accept_multiple_files=True
+# -------------------------
+# Page Config
+# -------------------------
+st.set_page_config(
+    page_title="Multi-Document RAG Chatbot",
+    layout="wide"
 )
 
-# ---------------- State ----------------
-if "documents" not in st.session_state:
-    st.session_state.documents = []
+# -------------------------
+# Sidebar
+# -------------------------
+with st.sidebar:
+    st.markdown("## 📘 About")
+    st.markdown("""
+    **Multi-Document RAG Chatbot can:**
+    - Answer questions from uploaded documents
+    - Search the web using Tavily
+    - Combine document + web context intelligently
+    """)
 
-if uploaded_files:
-    st.session_state.documents = ingest_uploaded_files(uploaded_files)
+    enable_web = st.toggle("🌐 Enable Web Search", value=False)
+    enable_hybrid = st.toggle("🔀 Enable Hybrid Search", value=False)
 
-# ---------------- Main UI ----------------
+    st.divider()
+
+    st.markdown("### 📁 Upload Documents")
+    uploaded_files = st.file_uploader(
+        "Upload PDF or TXT files",
+        type=["pdf", "txt"],
+        accept_multiple_files=True
+    )
+
+# -------------------------
+# Main UI
+# -------------------------
 st.title("Multi-Document RAG Chatbot")
 
-question = st.text_input("Ask a question about your documents")
+st.markdown("### 💡 Sample Questions")
+samples = [
+    "Summarize the uploaded documents",
+    "What is the main topic discussed?",
+    "Explain this document in simple terms",
+    "List key points from the document"
+]
 
-if st.button("Ask") and question:
+cols = st.columns(len(samples))
+for i, q in enumerate(samples):
+    if cols[i].button(q):
+        st.session_state["question"] = q
 
-    mode = "doc"
-    web_context = None
+question = st.text_input(
+    "Ask a question about your documents",
+    value=st.session_state.get("question", "")
+)
 
-    if hybrid_enabled:
-        mode = "hybrid"
-    elif web_enabled:
-        mode = "web"
+ask_clicked = st.button("Ask")
 
-    vectorstore = None
-    docs_for_rag = []
+# -------------------------
+# RAG Flow
+# -------------------------
+if ask_clicked:
+    if not uploaded_files:
+        st.warning("Please upload at least one document.")
+    elif not question.strip():
+        st.warning("Please enter a question.")
+    else:
+        with st.spinner("Processing documents..."):
+            docs = ingest_uploaded_files(uploaded_files)
+            chunks = chunk_documents(docs)
+            vectorstore = create_vector_store(chunks)
 
-    if mode in ["doc", "hybrid"] and st.session_state.documents:
-        vectorstore = create_vector_store(st.session_state.documents)
-        docs_for_rag = vectorstore.similarity_search(question, k=5)
+        web_context = None
+        if enable_web or enable_hybrid:
+            web_context = tavily_search(question)
 
-    if mode in ["web", "hybrid"]:
-        web_context = tavily_search(question)
+        with st.spinner("Generating answer..."):
+            answer, sources = generate_answer(
+                question=question,
+                vectorstore=vectorstore,
+                web_context=web_context,
+                hybrid=enable_hybrid
+            )
 
-    with st.spinner("Generating answer..."):
-        answer, sources = generate_answer(
-            question=question,
-            documents=docs_for_rag,
-            web_context=web_context,
-            mode=mode
-        )
+        # -------------------------
+        # Answer Section (ONLY place sources appear)
+        # -------------------------
+        st.markdown("## ✅ Answer")
+        st.write(answer)
 
-    # ---------------- Answer ----------------
-    st.markdown("## ✅ Answer")
-    st.write(answer)
+        if sources:
+            st.markdown("**Sources:**")
+            for src in sources:
+                st.markdown(f"- {src}")
 
-    # ---------------- Sources (RULED) ----------------
-    st.markdown("### 📚 Sources")
-
-    if mode in ["doc", "hybrid"]:
-        if sources["doc_citations"]:
-            st.markdown("**Document Citations:**")
-            for c in sources["doc_citations"]:
-                st.markdown(f"- {c}")
-
-        if not web_enabled:
-            st.markdown("**Uploaded Files:**")
-            for f in sources["doc_files"]:
-                st.markdown(f"- {f}")
-
-    if mode in ["web", "hybrid"]:
-        st.markdown("**Web Sources:**")
-        for w in sources["web_sources"]:
-            st.markdown(f"- {w}")
+# -------------------------
+# Footer
+# -------------------------
+st.divider()
+st.caption("Built with Streamlit · LangChain · FAISS · Groq · Tavily")
