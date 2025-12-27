@@ -4,7 +4,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 def create_vector_store(documents):
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2",
-        model_kwargs={"device": "cpu"}  # 🔥 CRITICAL FIX
+        model_kwargs={"device": "cpu"}
     )
 
     return FAISS.from_documents(documents, embeddings)
